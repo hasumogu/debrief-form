@@ -512,11 +512,18 @@ function setupVoiceAvailability(){
   if(!SR) showDictationNote();
 }
 
+var IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+  (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+var keepListening = false;
+
 function setupRecognition(){
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if(!SR) return null;
   var r=new SR();
-  r.lang='ja-JP'; r.continuous=true; r.interimResults=true;
+  r.lang='ja-JP';
+  // iOS は連続認識にすると開始直後に止まることがあるので、都度やり直す
+  r.continuous = !IS_IOS;
+  r.interimResults = true;
   var baseText='';
   r.onstart=function(){ baseText = recogTarget ? $(recogTarget).value : ''; };
   r.onresult=function(ev){
@@ -529,19 +536,63 @@ function setupRecognition(){
     $(recogTarget).value = baseText + (itm?'【'+itm+'】':'');
   };
   r.onerror=function(ev){
-    stopRec();
     if(ev.error==='not-allowed' || ev.error==='service-not-allowed'){
-      showDictationNote();
-      toast('このページではブラウザの音声認識が使えません。端末の音声入力をご利用ください。');
-    } else if(ev.error!=='no-speech' && ev.error!=='aborted'){
-      toast('音声認識エラー: '+ev.error);
+      keepListening = false;
+      stopRec();
+      requestMicPermission(ev.error);
+    } else if(ev.error==='no-speech' || ev.error==='aborted'){
+      // 無音・中断は正常。continuous=false の端末では onend で勝手に再開する
+    } else {
+      keepListening = false;
+      stopRec();
+      showMicProblem('音声認識が止まりました（' + ev.error + '）');
     }
   };
-  r.onend=function(){ stopRec(); };
+  r.onend=function(){
+    // iOS など continuous が効かない端末では、止めるまで自動で再開する
+    if(keepListening && recogTarget){
+      try { r.start(); return; } catch(e){ /* 連続再開に失敗したら終了 */ }
+    }
+    stopRec();
+  };
   return r;
 }
 
+/** マイク権限をブラウザに明示的に要求して、結果を画面に出す */
+function requestMicPermission(code){
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    showMicProblem('この端末ではマイクを使えません（' + code + '）');
+    return;
+  }
+  showMicProblem('マイクの使用許可を確認しています…');
+  navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
+    stream.getTracks().forEach(function(t){ t.stop(); });
+    showMicProblem('マイクは使える状態です。もう一度「🎤 音声入力」を押してください。');
+  }).catch(function(e){
+    const name = e && e.name ? e.name : String(e);
+    if(name==='NotAllowedError' || name==='SecurityError'){
+      showMicProblem('マイクの使用が許可されていません。' +
+        'アドレスバーの🔒（またはカメラ/マイクのアイコン）からこのサイトのマイクを「許可」にして、ページを再読み込みしてください。' +
+        (IS_IOS ? '<br>iPhoneでは 設定 ▸ Safari ▸ マイク も「確認」または「許可」にしてください。' : ''));
+    } else if(name==='NotFoundError' || name==='DevicesNotFoundError'){
+      showMicProblem('マイクが見つかりませんでした。端末のマイクが使える状態か確認してください。');
+    } else {
+      showMicProblem('マイクを使えませんでした（' + name + '）');
+    }
+  });
+}
+
+/** 音声まわりの状態を青いボックスに出す（原因を画面で確認できるように） */
+function showMicProblem(html){
+  var note=$('micNote');
+  if(!note) return;
+  note.innerHTML = '🎤 ' + html +
+    '<br><span style="opacity:.75">うまくいかないときは、' + dictationHint() + '</span>';
+  note.style.display='block';
+}
+
 function stopRec(){
+  keepListening = false;
   Array.prototype.forEach.call(document.querySelectorAll('.mini.mic'), function(b){
     b.classList.remove('rec'); b.textContent='🎤 音声入力';
   });
@@ -553,11 +604,18 @@ Array.prototype.forEach.call(document.querySelectorAll('.mini.mic'), function(bt
   btn.onclick=function(){
     if(!recog) recog=setupRecognition();
     if(!recog){ toast('この端末/ブラウザは音声入力に対応していません（Chrome推奨）'); return; }
-    if(recogTarget===btn.dataset.target){ recog.stop(); stopRec(); return; }
-    if(recogTarget){ recog.stop(); stopRec(); }
+    if(recogTarget===btn.dataset.target){ keepListening=false; recog.stop(); stopRec(); return; }
+    if(recogTarget){ keepListening=false; recog.stop(); stopRec(); }
     recogTarget=btn.dataset.target;
+    keepListening=true;
     btn.classList.add('rec'); btn.textContent='■ 停止（録音中）';
-    try{ recog.start(); }catch(e){ toast('開始できませんでした: '+e.message); stopRec(); }
+    try{
+      recog.start();
+    }catch(e){
+      keepListening=false;
+      stopRec();
+      showMicProblem('音声入力を開始できませんでした（' + (e.name||e.message) + '）');
+    }
   };
 });
 
