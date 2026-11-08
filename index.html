@@ -69,16 +69,6 @@
   .mini:hover{background:#f1f5f9}
   .mini.rec{background:#dc2626;border-color:#dc2626;color:#fff;animation:pulse 1.2s infinite}
   @keyframes pulse{50%{opacity:.6}}
-  /* 写真 */
-  .drop{border:2px dashed #cbd5e1;border-radius:12px;padding:18px;text-align:center;color:var(--sub);font-size:13px;
-    background:#fff;cursor:pointer}
-  .drop.over{border-color:var(--accent);background:#eff6ff;color:var(--accent)}
-  .thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-top:10px}
-  .thumb{position:relative;border-radius:10px;overflow:hidden;border:1px solid var(--line);aspect-ratio:4/3;background:#f1f5f9}
-  .thumb img{width:100%;height:100%;object-fit:cover;display:block}
-  .thumb button{position:absolute;top:4px;right:4px;border:none;border-radius:50%;width:22px;height:22px;
-    background:rgba(15,23,42,.75);color:#fff;font-size:13px;line-height:1;cursor:pointer}
-  .thumb .sz{position:absolute;bottom:0;left:0;right:0;background:rgba(15,23,42,.65);color:#fff;font-size:10px;padding:2px 4px}
   /* 送信バー */
   .bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:10px 16px;
     display:flex;gap:10px;align-items:center;z-index:30;box-shadow:0 -2px 10px rgba(15,23,42,.08)}
@@ -211,17 +201,6 @@
     </details>
   </div>
 
-  <!-- 4. 写真 -->
-  <div class="card">
-    <h2><span class="num">4</span>ホワイトボードの写真</h2>
-    <div class="hint">撮影した板書をそのまま添付できます。送信前に自動で縮小するので通信量は小さく済みます。</div>
-    <div class="drop" id="drop">
-      📷 タップして撮影 / 画像を選択<br>
-      <span style="font-size:11px">（ドラッグ＆ドロップも可・複数枚OK）</span>
-    </div>
-    <input type="file" id="file" accept="image/*" capture="environment" multiple style="display:none">
-    <div class="thumbs" id="thumbs"></div>
-  </div>
 </main>
 </div>
 
@@ -251,7 +230,7 @@
 var API_URL = 'https://script.google.com/macros/s/AKfycbx2v3s33w3yH4sbPoh3ItEQ01r_I8WUWyBPpA-eyTZxwUu_T2tvX4uP7mwNIQbGjEQe/exec';
 
 var BOOT = null;
-var state = { incidentId:'', org:'', role:'', tasks:[], photos:[] };
+var state = { incidentId:'', org:'', role:'', tasks:[] };
 var sortedVariants = [];
 var recog = null, recogTarget = null;
 
@@ -625,67 +604,6 @@ Array.prototype.forEach.call(document.querySelectorAll('.mini.mic'), function(bt
 });
 
 /*--------------------------------------------------
- * 写真（クライアント側で縮小）
- *------------------------------------------------*/
-var MAX_EDGE=1600, JPEG_Q=0.8, MAX_PHOTOS=8;
-
-$('drop').onclick=function(){ $('file').click(); };
-$('file').onchange=function(){ addFiles(this.files); this.value=''; };
-['dragover','dragenter'].forEach(function(ev){
-  $('drop').addEventListener(ev,function(e){ e.preventDefault(); this.classList.add('over'); });
-});
-['dragleave','drop'].forEach(function(ev){
-  $('drop').addEventListener(ev,function(e){ e.preventDefault(); this.classList.remove('over'); });
-});
-$('drop').addEventListener('drop',function(e){ if(e.dataTransfer&&e.dataTransfer.files) addFiles(e.dataTransfer.files); });
-
-function addFiles(files){
-  Array.prototype.forEach.call(files, function(f){
-    if(!/^image\//.test(f.type)) return;
-    if(state.photos.length>=MAX_PHOTOS){ toast('写真は最大'+MAX_PHOTOS+'枚までです'); return; }
-    shrink(f).then(function(p){ state.photos.push(p); renderThumbs(); updateStatus(); })
-      .catch(function(e){ toast('画像の読み込みに失敗: '+e); });
-  });
-}
-
-function shrink(file){
-  return new Promise(function(resolve,reject){
-    var reader=new FileReader();
-    reader.onerror=function(){ reject('read error'); };
-    reader.onload=function(){
-      var img=new Image();
-      img.onerror=function(){ reject('decode error'); };
-      img.onload=function(){
-        var w=img.width,h=img.height, scale=Math.min(1, MAX_EDGE/Math.max(w,h));
-        var cw=Math.round(w*scale), ch=Math.round(h*scale);
-        var cv=document.createElement('canvas'); cv.width=cw; cv.height=ch;
-        cv.getContext('2d').drawImage(img,0,0,cw,ch);
-        var dataUrl=cv.toDataURL('image/jpeg',JPEG_Q);
-        resolve({
-          name:file.name||'whiteboard.jpg', mimeType:'image/jpeg',
-          data:dataUrl.split('base64,')[1], preview:dataUrl,
-          kb: Math.round(dataUrl.length*0.75/1024)
-        });
-      };
-      img.src=reader.result;
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
-function renderThumbs(){
-  var box=$('thumbs'); box.innerHTML='';
-  state.photos.forEach(function(p,i){
-    var d=el('div','thumb');
-    d.innerHTML='<img src="'+p.preview+'" alt=""><div class="sz">'+p.kb+'KB</div>';
-    var b=el('button','','×');
-    b.onclick=function(){ state.photos.splice(i,1); renderThumbs(); updateStatus(); };
-    d.appendChild(b);
-    box.appendChild(d);
-  });
-}
-
-/*--------------------------------------------------
  * 送信
  *------------------------------------------------*/
 function updateStatus(){
@@ -693,7 +611,6 @@ function updateStatus(){
   parts.push(state.incidentId ? '事案 '+state.incidentId : '事案 未選択');
   parts.push(state.org ? state.org+'／'+(state.role||'役割未選択') : '所属 未選択');
   if(state.tasks.length) parts.push('タスク'+state.tasks.length);
-  if(state.photos.length) parts.push('写真'+state.photos.length+'枚');
   $('status').textContent=parts.join('　');
   $('btnSubmit').disabled = !(state.incidentId && state.org);
 }
@@ -707,8 +624,7 @@ function collect(){
     tasks: collectTasks(),
     keep: $('keep').value,
     problem: $('problem').value,
-    tryNext: $('tryNext').value,
-    photos: state.photos.map(function(p){ return {name:p.name, mimeType:p.mimeType, data:p.data}; })
+    tryNext: $('tryNext').value
   };
 }
 
@@ -726,11 +642,11 @@ $('btnSubmit').onclick=function(){
     $('taskOther').focus();
     return;
   }
-  if(!$('keep').value && !$('problem').value && !$('tryNext').value && !state.photos.length){
-    if(!confirm('コメントも写真も入力されていません。このまま送信しますか？')) return;
+  if(!$('keep').value && !$('problem').value && !$('tryNext').value){
+    if(!confirm('まだ何も入力されていません。このまま送信しますか？')) return;
   }
   var btn=this; btn.disabled=true; btn.textContent='送信中…';
-  $('status').textContent='送信中…（写真がある場合は少し時間がかかります）';
+  $('status').textContent='送信中…';
   saveProfile();
   var payload=collect();
 
@@ -752,8 +668,7 @@ function showDone(res){
   $('formArea').style.display='none';
   $('bar').style.display='none';
   $('doneArea').style.display='block';
-  $('doneMsg').textContent='事案 '+res.incidentId+' に登録しました'+
-    (res.photoCount?'（写真 '+res.photoCount+' 枚）':'')+'。この事案専用のシートに反映されています。';
+  $('doneMsg').textContent='事案 '+res.incidentId+' に登録しました。この事案専用のシートに反映されています。';
   if(res.sheetUrl){ $('doneLink').href=res.sheetUrl; } else { $('doneLink').style.display='none'; }
   window.scrollTo({top:0});
 }
@@ -770,10 +685,10 @@ $('btnClear').onclick=function(){ if(confirm('入力内容をクリアします�
 
 function resetComment(){
   ['keep','problem','tryNext'].forEach(function(id){ $(id).value=''; });
-  state.tasks=[]; state.photos=[];
+  state.tasks=[];
   Array.prototype.forEach.call(document.querySelectorAll('#tasks .chip'), function(n){ n.dataset.sel=''; });
   toggleTaskOther(false);
-  renderThumbs(); showErr(''); updateStatus();
+  showErr(''); updateStatus();
 }
 
 /*--------------------------------------------------
