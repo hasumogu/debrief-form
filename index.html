@@ -82,9 +82,10 @@
   /* 送信バー */
   .bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:10px 16px;
     display:flex;gap:10px;align-items:center;z-index:30;box-shadow:0 -2px 10px rgba(15,23,42,.08)}
-  .bar .status{flex:1;font-size:12px;color:var(--sub)}
-  .btn{border:none;border-radius:12px;padding:12px 22px;font-size:15px;font-weight:700;cursor:pointer;
-    background:var(--accent);color:#fff}
+  .bar .status{flex:1;min-width:0;font-size:12px;color:var(--sub);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .btn{border:none;border-radius:12px;padding:12px 20px;font-size:15px;font-weight:700;cursor:pointer;
+    background:var(--accent);color:#fff;flex:none;white-space:nowrap}
   .btn:disabled{opacity:.5;cursor:not-allowed}
   .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line);font-weight:600}
   /* 辞書 */
