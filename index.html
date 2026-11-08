@@ -1,0 +1,750 @@
+<!--
+  外部ホスティング用（Apps Script の外に置く版）
+  ------------------------------------------------------------------
+  このファイルを GitHub Pages などの「ふつうのWebページ」として公開すると、
+  Apps Script のサンドボックス枠の外で動くため、ブラウザの音声認識が使えます。
+
+  ★ 公開する前に必要な設定
+    Apps Script のデプロイ設定で、アクセスできるユーザーを
+    「全員」（Googleログイン不要）にしてください。
+    「Googleアカウントを持つ全員」のままだと、外部ページからの通信が
+    ログイン画面へ飛ばされて失敗します。
+
+  ※ このファイルは clasp push の対象外です（.claspignore に登録済み）
+-->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>デブリーフィング意見集約</title>
+<style>
+  :root{
+    --ems:#2563eb; --ems-bg:#dbeafe; --ems-fg:#1e3a8a;
+    --res:#dc2626; --res-bg:#fee2e2; --res-fg:#7f1d1d;
+    --oth:#16a34a; --oth-bg:#dcfce7; --oth-fg:#14532d;
+    --ink:#0f172a; --sub:#64748b; --line:#e2e8f0; --bg:#f8fafc; --card:#ffffff;
+    --accent:var(--ems);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:0 0 96px;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+    font-size:15px;line-height:1.6;-webkit-text-size-adjust:100%}
+  header{position:sticky;top:0;z-index:20;background:var(--ink);color:#fff;padding:12px 16px;
+    display:flex;align-items:center;gap:10px;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+  header h1{margin:0;font-size:16px;font-weight:700;flex:1}
+  header .legend{font-size:11px;opacity:.85;white-space:nowrap}
+  main{max-width:860px;margin:0 auto;padding:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px;
+    box-shadow:0 1px 3px rgba(15,23,42,.06)}
+  .card > h2{margin:0 0 10px;font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px;color:var(--ink)}
+  .card > h2 .num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;
+    background:var(--accent);color:#fff;font-size:12px;flex:none}
+  .hint{font-size:12px;color:var(--sub);margin:-4px 0 10px}
+  label{display:block;font-size:12px;font-weight:600;color:var(--sub);margin:10px 0 4px}
+  input[type=text],input[type=number],input[type=datetime-local],select,textarea{
+    width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;
+    font-family:inherit;background:#fff;color:var(--ink)}
+  textarea{min-height:88px;resize:vertical;line-height:1.7}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .row > *{flex:1;min-width:150px}
+  /* 所属区分 */
+  .orgs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .org{border:2px solid var(--line);border-radius:12px;padding:12px 8px;text-align:center;cursor:pointer;
+    background:#fff;font-weight:700;font-size:14px;transition:.12s}
+  .org .dot{display:block;font-size:20px;line-height:1}
+  .org[data-sel="1"]{transform:translateY(-1px);box-shadow:0 2px 10px rgba(15,23,42,.12)}
+  .org[data-org="救急隊"][data-sel="1"]{border-color:var(--ems);background:var(--ems-bg);color:var(--ems-fg)}
+  .org[data-org="救助隊"][data-sel="1"]{border-color:var(--res);background:var(--res-bg);color:var(--res-fg)}
+  .org[data-org="その他"][data-sel="1"]{border-color:var(--oth);background:var(--oth-bg);color:var(--oth-fg)}
+  /* チップ */
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;font-size:13px;cursor:pointer;
+    user-select:none}
+  .chip[data-sel="1"]{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .other-input{margin-top:8px;border-style:dashed;border-color:var(--accent)}
+  .mic-note{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:10px;
+    padding:10px 12px;font-size:12.5px;line-height:1.7;margin:0 0 12px}
+  .mic-note b{color:#1e3a8a}
+  .mic-note kbd{background:#fff;border:1px solid #93c5fd;border-bottom-width:2px;border-radius:5px;
+    padding:1px 6px;font-family:inherit;font-size:12px;color:#1e3a8a}
+  /* 事案選択 */
+  .inc-list{display:flex;flex-direction:column;gap:8px;max-height:260px;overflow:auto;padding:2px}
+  .inc{border:2px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer;background:#fff}
+  .inc[data-sel="1"]{border-color:var(--accent);background:#eff6ff}
+  .inc .id{font-family:ui-monospace,Menlo,monospace;font-weight:700;font-size:13px}
+  .inc .meta{font-size:12px;color:var(--sub)}
+  .inc .badges{font-size:11px;color:var(--sub);margin-top:2px}
+  /* 音声入力 */
+  .ta-wrap{position:relative}
+  .ta-tools{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+  .mini{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;
+    display:inline-flex;align-items:center;gap:4px}
+  .mini:hover{background:#f1f5f9}
+  .mini.rec{background:#dc2626;border-color:#dc2626;color:#fff;animation:pulse 1.2s infinite}
+  @keyframes pulse{50%{opacity:.6}}
+  /* 写真 */
+  .drop{border:2px dashed #cbd5e1;border-radius:12px;padding:18px;text-align:center;color:var(--sub);font-size:13px;
+    background:#fff;cursor:pointer}
+  .drop.over{border-color:var(--accent);background:#eff6ff;color:var(--accent)}
+  .thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-top:10px}
+  .thumb{position:relative;border-radius:10px;overflow:hidden;border:1px solid var(--line);aspect-ratio:4/3;background:#f1f5f9}
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .thumb button{position:absolute;top:4px;right:4px;border:none;border-radius:50%;width:22px;height:22px;
+    background:rgba(15,23,42,.75);color:#fff;font-size:13px;line-height:1;cursor:pointer}
+  .thumb .sz{position:absolute;bottom:0;left:0;right:0;background:rgba(15,23,42,.65);color:#fff;font-size:10px;padding:2px 4px}
+  /* 送信バー */
+  .bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:10px 16px;
+    display:flex;gap:10px;align-items:center;z-index:30;box-shadow:0 -2px 10px rgba(15,23,42,.08)}
+  .bar .status{flex:1;font-size:12px;color:var(--sub)}
+  .btn{border:none;border-radius:12px;padding:12px 22px;font-size:15px;font-weight:700;cursor:pointer;
+    background:var(--accent);color:#fff}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line);font-weight:600}
+  /* 辞書 */
+  .dict-box{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+  .dict-row{padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:13px}
+  .dict-row:last-child{border-bottom:none}
+  .dict-row b{color:var(--accent)}
+  .dict-row .ja{color:var(--sub);font-size:12px}
+  details summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--sub)}
+  .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:84px;background:var(--ink);color:#fff;
+    padding:10px 16px;border-radius:10px;font-size:13px;z-index:40;opacity:0;transition:.2s;pointer-events:none;
+    max-width:90%;text-align:center}
+  .toast.show{opacity:1}
+  .done{text-align:center;padding:40px 16px}
+  .done .mark{font-size:52px}
+  .err{background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;padding:10px 12px;border-radius:10px;font-size:13px;
+    margin-bottom:10px;display:none}
+  .req::after{content:" *";color:#dc2626}
+</style>
+</head>
+<body>
+<header>
+  <h1>🚑 デブリーフィング意見集約</h1>
+  <span class="legend">🟦救急隊 🟥救助隊 🟩その他</span>
+</header>
+
+<main id="app">
+  <div class="card"><div class="hint" id="loading">読み込み中…</div></div>
+</main>
+
+<div id="formArea" style="display:none">
+<main>
+  <div class="err" id="err"></div>
+
+  <!-- 1. 事案 -->
+  <div class="card">
+    <h2><span class="num">1</span>どの事案のデブリーフィングですか？</h2>
+    <div class="hint">同じ事案を選ぶと、スプレッドシートの「事案別ビュー」に全員のコメントがまとまります。</div>
+    <div class="inc-list" id="incList"></div>
+    <div class="ta-tools">
+      <button type="button" class="mini" id="btnNewInc">＋ 新しい事案を登録する</button>
+      <button type="button" class="mini" id="btnReload">↻ 事案一覧を再読込</button>
+    </div>
+    <div id="newIncForm" style="display:none;margin-top:12px;border-top:1px dashed var(--line);padding-top:12px">
+      <div class="row">
+        <div><label>発生日時</label><input type="datetime-local" id="ni_occurred"></div>
+        <div><label>事案種別</label><select id="ni_type"></select></div>
+      </div>
+      <div class="row">
+        <div><label>発生場所</label><input type="text" id="ni_place" placeholder="例）○○市△△町 自宅"></div>
+        <div><label>指揮者・隊長</label><input type="text" id="ni_commander"></div>
+      </div>
+      <div class="row">
+        <div><label>初期波形</label><select id="ni_rhythm"></select></div>
+        <div><label>バイスタンダーCPR</label><select id="ni_bystander"></select></div>
+        <div><label>現場活動時間(分)</label><input type="number" id="ni_duration" min="0"></div>
+      </div>
+      <div class="row">
+        <div><label>転帰</label><select id="ni_outcome"></select></div>
+        <div><label>搬送先</label><input type="text" id="ni_hospital"></div>
+        <div><label>出場隊・参加人数</label><input type="text" id="ni_members" placeholder="例）救急2隊・救助1隊 計9名"></div>
+      </div>
+      <label>概要メモ</label>
+      <textarea id="ni_memo" style="min-height:60px" placeholder="活動の流れを簡単に"></textarea>
+      <div class="ta-tools"><button type="button" class="mini" id="btnCreateInc">この内容で事案を作成</button></div>
+    </div>
+  </div>
+
+  <!-- 2. あなたの情報 -->
+  <div class="card">
+    <h2><span class="num">2</span>あなたの所属・役割</h2>
+    <label class="req">所属区分（色分けに使われます）</label>
+    <div class="orgs" id="orgs"></div>
+    <div class="row">
+      <div><label class="req">役割</label><select id="role"></select></div>
+      <div><label>氏名</label><input type="text" id="name" placeholder="匿名でも送信できます"></div>
+    </div>
+    <label>担当タスク（複数選択可）</label>
+    <div class="chips" id="tasks"></div>
+    <input type="text" id="taskOther" class="other-input"
+           placeholder="「その他」の内容を記入（例：資器材搬送、交通整理）"
+           style="display:none">
+  </div>
+
+  <!-- 3. 気づき -->
+  <div class="card">
+    <h2><span class="num">3</span>気づき（KPT）</h2>
+    <div class="hint">話した内容を入れたあと「✨ 用語を変換」を押すと、用語辞書で正式表記に整えます（例：ぷれしょっくぽーず → Pre-shock Pause Time）。</div>
+    <div class="mic-note" id="micNote" style="display:none"></div>
+
+    <label>◎ 良かった点 / 続けたいこと（Keep）</label>
+    <div class="ta-wrap"><textarea id="keep" data-voice="1"></textarea>
+      <div class="ta-tools">
+        <button type="button" class="mini mic" data-target="keep">🎤 音声入力</button>
+        <button type="button" class="mini fix" data-target="keep">✨ 用語を変換</button>
+      </div>
+    </div>
+
+    <label>△ 改善点 / 課題（Problem）</label>
+    <div class="ta-wrap"><textarea id="problem" data-voice="1"></textarea>
+      <div class="ta-tools">
+        <button type="button" class="mini mic" data-target="problem">🎤 音声入力</button>
+        <button type="button" class="mini fix" data-target="problem">✨ 用語を変換</button>
+      </div>
+    </div>
+
+    <label>→ 次回やること（Try）</label>
+    <div class="ta-wrap"><textarea id="tryNext" data-voice="1"></textarea>
+      <div class="ta-tools">
+        <button type="button" class="mini mic" data-target="tryNext">🎤 音声入力</button>
+        <button type="button" class="mini fix" data-target="tryNext">✨ 用語を変換</button>
+      </div>
+    </div>
+
+    <details style="margin-top:12px">
+      <summary>📖 用語辞書を見る／検索する</summary>
+      <input type="text" id="dictQ" placeholder="用語・日本語訳で検索" style="margin:8px 0">
+      <div class="dict-box" id="dictBox"></div>
+    </details>
+  </div>
+
+  <!-- 4. 写真 -->
+  <div class="card">
+    <h2><span class="num">4</span>ホワイトボードの写真</h2>
+    <div class="hint">撮影した板書をそのまま添付できます。送信前に自動で縮小するので通信量は小さく済みます。</div>
+    <div class="drop" id="drop">
+      📷 タップして撮影 / 画像を選択<br>
+      <span style="font-size:11px">（ドラッグ＆ドロップも可・複数枚OK）</span>
+    </div>
+    <input type="file" id="file" accept="image/*" capture="environment" multiple style="display:none">
+    <div class="thumbs" id="thumbs"></div>
+  </div>
+</main>
+</div>
+
+<div id="doneArea" style="display:none">
+  <div class="done">
+    <div class="mark">✅</div>
+    <h2 style="margin:8px 0">送信しました</h2>
+    <p id="doneMsg" class="hint" style="font-size:14px"></p>
+    <p><a id="doneLink" href="#" target="_blank">この事案のシートで全員の意見を見る →</a></p>
+    <div style="margin-top:20px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+      <button class="btn ghost" id="btnAgainSame">同じ事案にもう1件書く</button>
+      <button class="btn" id="btnAgainNew">最初から入力する</button>
+    </div>
+  </div>
+</div>
+
+<div class="bar" id="bar" style="display:none">
+  <span class="status" id="status">未送信</span>
+  <button class="btn ghost" id="btnClear">クリア</button>
+  <button class="btn" id="btnSubmit">送信する</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/*** 外部サイトに置く場合のみ、ここにデプロイURLを入れる（GAS配信なら空のまま） ***/
+var API_URL = 'https://script.google.com/macros/s/AKfycbx2v3s33w3yH4sbPoh3ItEQ01r_I8WUWyBPpA-eyTZxwUu_T2tvX4uP7mwNIQbGjEQe/exec';
+
+var BOOT = null;
+var state = { incidentId:'', org:'', role:'', tasks:[], photos:[] };
+var sortedVariants = [];
+var recog = null, recogTarget = null;
+
+function $(id){ return document.getElementById(id); }
+function el(tag, cls, html){ var e=document.createElement(tag); if(cls) e.className=cls; if(html!==undefined) e.innerHTML=html; return e; }
+function toast(msg){ var t=$('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(function(){t.classList.remove('show');},2600); }
+function showErr(msg){ var e=$('err'); if(!msg){ e.style.display='none'; return;} e.textContent=msg; e.style.display='block'; window.scrollTo({top:0,behavior:'smooth'}); }
+function inGas(){ return typeof google!=='undefined' && google.script && google.script.run; }
+
+/*--------------------------------------------------
+ * 初期化
+ *------------------------------------------------*/
+function boot(){
+  if(inGas()){
+    google.script.run.withSuccessHandler(onBoot).withFailureHandler(function(e){
+      $('loading').textContent='読み込みに失敗しました: '+e.message;
+    }).apiBootstrap();
+  } else if(API_URL){
+    fetch(API_URL+'?action=bootstrap').then(function(r){return r.json();}).then(onBoot)
+      .catch(function(e){ $('loading').textContent='読み込みに失敗しました: '+e; });
+  } else {
+    $('loading').textContent='API_URL が未設定です。';
+  }
+}
+
+function onBoot(data){
+  BOOT = data;
+  buildVariantIndex(data.dict||{});
+  $('app').style.display='none';
+  $('formArea').style.display='block';
+  $('bar').style.display='flex';
+  renderIncidents(data.incidents||[]);
+  renderOrgs(data.orgTypes||[]);
+  renderTasks(data.taskOptions||[]);
+  fillSelect('ni_type', (data.choices&&data.choices.INCIDENT_TYPE)||[]);
+  fillSelect('ni_rhythm', (data.choices&&data.choices.INITIAL_RHYTHM)||[], true);
+  fillSelect('ni_bystander', (data.choices&&data.choices.BYSTANDER)||[], true);
+  fillSelect('ni_outcome', (data.choices&&data.choices.OUTCOME)||[], true);
+  renderDict('');
+  setupVoiceAvailability();
+  restoreProfile();
+  updateStatus();
+}
+
+function fillSelect(id, list, blankFirst){
+  var s=$(id); if(!s) return; s.innerHTML='';
+  if(blankFirst) s.appendChild(el('option','', '（未選択）'));
+  list.forEach(function(v){ var o=el('option','',v); o.value=v; s.appendChild(o); });
+}
+
+/*--------------------------------------------------
+ * 事案
+ *------------------------------------------------*/
+function renderIncidents(list){
+  var box=$('incList'); box.innerHTML='';
+  if(!list.length){ box.appendChild(el('div','hint','登録済みの事案がありません。「＋ 新しい事案を登録する」から作成してください。')); return; }
+  list.forEach(function(inc){
+    var d=el('div','inc');
+    d.dataset.id=inc.incidentId;
+    d.innerHTML='<div class="id">'+inc.incidentId+'</div>'+
+      '<div class="meta">'+(inc.occurredLabel||'')+'　'+(inc.type||'')+(inc.place?'　📍'+inc.place:'')+'</div>'+
+      '<div class="badges">'+(inc.initialRhythm?'波形 '+inc.initialRhythm+'　':'')+
+      (inc.outcome?'転帰 '+inc.outcome+'　':'')+'コメント '+(inc.count||0)+' 件　'+(inc.status||'')+'</div>';
+    d.onclick=function(){ selectIncident(inc.incidentId); };
+    box.appendChild(d);
+  });
+  if(list.length===1) selectIncident(list[0].incidentId);
+}
+
+function selectIncident(id){
+  state.incidentId=id;
+  Array.prototype.forEach.call(document.querySelectorAll('#incList .inc'), function(n){
+    n.dataset.sel = (n.dataset.id===id)?'1':'';
+  });
+  $('newIncForm').style.display='none';
+  updateStatus();
+}
+
+$('btnNewInc').onclick=function(){
+  var f=$('newIncForm');
+  f.style.display = (f.style.display==='none')?'block':'none';
+  if(f.style.display==='block' && !$('ni_occurred').value){
+    var d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset());
+    $('ni_occurred').value=d.toISOString().slice(0,16);
+  }
+};
+
+$('btnReload').onclick=function(){
+  if(!inGas()){ toast('再読込は GAS 配信時のみ'); return; }
+  google.script.run.withSuccessHandler(function(d){ renderIncidents(d.incidents||[]); toast('事案一覧を更新しました'); })
+    .apiBootstrap();
+};
+
+$('btnCreateInc').onclick=function(){
+  var info={
+    occurredAt: $('ni_occurred').value || new Date().toISOString(),
+    type: $('ni_type').value, place: $('ni_place').value,
+    initialRhythm: $('ni_rhythm').value, bystander: $('ni_bystander').value,
+    duration: $('ni_duration').value, outcome: $('ni_outcome').value,
+    hospital: $('ni_hospital').value, commander: $('ni_commander').value,
+    members: $('ni_members').value, memo: $('ni_memo').value
+  };
+  this.disabled=true; this.textContent='作成中…';
+  var self=this;
+  var done=function(res){
+    self.disabled=false; self.textContent='この内容で事案を作成';
+    if(res && res.status==='success'){
+      renderIncidents(res.incidents||[]);
+      selectIncident(res.incident.incidentId);
+      toast('事案 '+res.incident.incidentId+' を作成しました');
+    } else { showErr('事案の作成に失敗しました: '+(res&&res.message)); }
+  };
+  if(inGas()){
+    google.script.run.withSuccessHandler(done).withFailureHandler(function(e){
+      self.disabled=false; self.textContent='この内容で事案を作成'; showErr(e.message);
+    }).apiCreateIncident(info);
+  } else {
+    post({ __createIncident:true, newIncident:info }).then(done);
+  }
+};
+
+/*--------------------------------------------------
+ * 所属・役割・タスク
+ *------------------------------------------------*/
+function renderOrgs(orgs){
+  var box=$('orgs'); box.innerHTML='';
+  orgs.forEach(function(o){
+    var d=el('div','org','<span class="dot">'+o.emoji+'</span>'+o.name);
+    d.dataset.org=o.name;
+    d.onclick=function(){ selectOrg(o.name); };
+    box.appendChild(d);
+  });
+}
+
+function selectOrg(name){
+  state.org=name;
+  Array.prototype.forEach.call(document.querySelectorAll('#orgs .org'), function(n){
+    n.dataset.sel=(n.dataset.org===name)?'1':'';
+  });
+  var accent = name==='救急隊' ? 'var(--ems)' : (name==='救助隊' ? 'var(--res)' : 'var(--oth)');
+  document.documentElement.style.setProperty('--accent', accent);
+  var roles=(BOOT.roleOptions&&BOOT.roleOptions[name])||[];
+  fillSelect('role', roles);
+  state.role=roles[0]||'';
+  updateStatus();
+}
+
+$('role').onchange=function(){ state.role=this.value; updateStatus(); };
+$('name').oninput=function(){ saveProfile(); };
+
+function renderTasks(list){
+  var box=$('tasks'); box.innerHTML='';
+  list.forEach(function(t){
+    var c=el('div','chip',t);
+    c.onclick=function(){
+      var i=state.tasks.indexOf(t);
+      if(i>=0){ state.tasks.splice(i,1); c.dataset.sel=''; } else { state.tasks.push(t); c.dataset.sel='1'; }
+      if(t===OTHER_LABEL) toggleTaskOther(state.tasks.indexOf(OTHER_LABEL)>=0);
+      updateStatus();
+    };
+    box.appendChild(c);
+  });
+}
+
+var OTHER_LABEL='その他';
+
+/** 「その他」チップの選択に合わせて記入欄を出し入れする */
+function toggleTaskOther(on){
+  var box=$('taskOther');
+  box.style.display = on ? 'block' : 'none';
+  if(on){ setTimeout(function(){ box.focus(); }, 0); } else { box.value=''; }
+}
+
+/** 「その他」が選ばれていれば、記入内容を添えて返す */
+function collectTasks(){
+  var note=$('taskOther').value.trim();
+  return state.tasks.map(function(t){
+    return (t===OTHER_LABEL && note) ? OTHER_LABEL+'：'+note : t;
+  });
+}
+
+/*--------------------------------------------------
+ * 用語辞書（表記ゆれ→正式表記）
+ *------------------------------------------------*/
+function buildVariantIndex(dict){
+  sortedVariants = Object.keys(dict)
+    .filter(function(k){ return k && dict[k] && k!==dict[k] && k.length>=2; })
+    .map(function(k){ return {from:k, to:dict[k]}; })
+    .sort(function(a,b){ return b.from.length-a.from.length; });
+}
+
+function escapeRe(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
+
+function normalizeTerms(text){
+  var out=text, hits=[];
+  sortedVariants.forEach(function(v){
+    var re=new RegExp(escapeRe(v.from),'gi');
+    if(re.test(out)){ out=out.replace(re, v.to); hits.push(v.from+'→'+v.to); }
+  });
+  return {text:out, hits:hits};
+}
+
+function renderDict(q){
+  var box=$('dictBox'); box.innerHTML='';
+  var entries=(BOOT && BOOT.dictEntries)||[];
+  var key=(q||'').toLowerCase();
+  var list=entries.filter(function(e){
+    if(!key) return true;
+    return (e.term+' '+e.ja+' '+e.reading+' '+e.category).toLowerCase().indexOf(key)>=0;
+  }).slice(0,120);
+  if(!list.length){ box.appendChild(el('div','dict-row','該当なし')); return; }
+  list.forEach(function(e){
+    box.appendChild(el('div','dict-row','<b>'+e.term+'</b>'+(e.ja?' <span class="ja">／ '+e.ja+'</span>':'')+
+      (e.desc?'<div class="ja">'+e.desc+'</div>':'')));
+  });
+}
+$('dictQ').oninput=function(){ renderDict(this.value); };
+
+Array.prototype.forEach.call(document.querySelectorAll('.mini.fix'), function(btn){
+  btn.onclick=function(){
+    var ta=$(btn.dataset.target);
+    var r=normalizeTerms(ta.value);
+    ta.value=r.text;
+    toast(r.hits.length ? '変換: '+r.hits.slice(0,3).join(' / ')+(r.hits.length>3?' ほか':'') : '変換対象はありませんでした');
+  };
+});
+
+/*--------------------------------------------------
+ * 音声入力
+ *------------------------------------------------*/
+/**
+ * Apps Script はページをサンドボックス iframe で配信するため、
+ * ブラウザの音声認識 API（Web Speech API）はマイク権限を得られず not-allowed になります。
+ * その場合は端末側の音声入力（ディクテーション）に案内します。
+ */
+var dictationNoteShown = false;
+
+function dictationHint(){
+  var ua = navigator.userAgent;
+  if(/iPhone|iPad|iPod|Android/.test(ua)) return 'キーボードの <kbd>🎤</kbd> キーを押すと、そのまま話して入力できます。';
+  if(/Mac OS X/.test(ua)) return '<kbd>fn</kbd> キーを2回押すと話して入力できます（システム設定 ▸ キーボード ▸ 音声入力 をオンに）。';
+  if(/Windows/.test(ua)) return '<kbd>Windows</kbd> ＋ <kbd>H</kbd> を押すと話して入力できます。';
+  return 'お使いの端末の音声入力（ディクテーション）機能をお使いください。';
+}
+
+/** マイクボタンを隠して、端末の音声入力の使い方を案内する */
+function showDictationNote(){
+  if(dictationNoteShown) return;
+  dictationNoteShown = true;
+  Array.prototype.forEach.call(document.querySelectorAll('.mini.mic'), function(b){ b.style.display='none'; });
+  var note=$('micNote');
+  if(!note) return;
+  note.innerHTML = '🎤 <b>この画面ではブラウザの音声認識が使えません</b><br>' + dictationHint() +
+    '<br>入力したあとに「✨ 用語を変換」を押すと、正式な用語表記に整います。';
+  note.style.display='block';
+}
+
+function setupVoiceAvailability(){
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  // 音声認識 API が無い端末だけ、最初から案内に切り替える。
+  // API がある場合はまず試してもらい、not-allowed が返ってきた時点で案内へ切り替える
+  // （環境によっては枠の中でも動くことがあるため、先回りして隠さない）。
+  if(!SR) showDictationNote();
+}
+
+function setupRecognition(){
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR) return null;
+  var r=new SR();
+  r.lang='ja-JP'; r.continuous=true; r.interimResults=true;
+  var baseText='';
+  r.onstart=function(){ baseText = recogTarget ? $(recogTarget).value : ''; };
+  r.onresult=function(ev){
+    var fin='', itm='';
+    for(var i=ev.resultIndex;i<ev.results.length;i++){
+      if(ev.results[i].isFinal) fin+=ev.results[i][0].transcript; else itm+=ev.results[i][0].transcript;
+    }
+    if(!recogTarget) return;
+    if(fin){ baseText = (baseText?baseText:'') + normalizeTerms(fin).text; }
+    $(recogTarget).value = baseText + (itm?'【'+itm+'】':'');
+  };
+  r.onerror=function(ev){
+    stopRec();
+    if(ev.error==='not-allowed' || ev.error==='service-not-allowed'){
+      showDictationNote();
+      toast('このページではブラウザの音声認識が使えません。端末の音声入力をご利用ください。');
+    } else if(ev.error!=='no-speech' && ev.error!=='aborted'){
+      toast('音声認識エラー: '+ev.error);
+    }
+  };
+  r.onend=function(){ stopRec(); };
+  return r;
+}
+
+function stopRec(){
+  Array.prototype.forEach.call(document.querySelectorAll('.mini.mic'), function(b){
+    b.classList.remove('rec'); b.textContent='🎤 音声入力';
+  });
+  if(recogTarget){ var ta=$(recogTarget); ta.value=ta.value.replace(/【[^】]*】/g,''); }
+  recogTarget=null;
+}
+
+Array.prototype.forEach.call(document.querySelectorAll('.mini.mic'), function(btn){
+  btn.onclick=function(){
+    if(!recog) recog=setupRecognition();
+    if(!recog){ toast('この端末/ブラウザは音声入力に対応していません（Chrome推奨）'); return; }
+    if(recogTarget===btn.dataset.target){ recog.stop(); stopRec(); return; }
+    if(recogTarget){ recog.stop(); stopRec(); }
+    recogTarget=btn.dataset.target;
+    btn.classList.add('rec'); btn.textContent='■ 停止（録音中）';
+    try{ recog.start(); }catch(e){ toast('開始できませんでした: '+e.message); stopRec(); }
+  };
+});
+
+/*--------------------------------------------------
+ * 写真（クライアント側で縮小）
+ *------------------------------------------------*/
+var MAX_EDGE=1600, JPEG_Q=0.8, MAX_PHOTOS=8;
+
+$('drop').onclick=function(){ $('file').click(); };
+$('file').onchange=function(){ addFiles(this.files); this.value=''; };
+['dragover','dragenter'].forEach(function(ev){
+  $('drop').addEventListener(ev,function(e){ e.preventDefault(); this.classList.add('over'); });
+});
+['dragleave','drop'].forEach(function(ev){
+  $('drop').addEventListener(ev,function(e){ e.preventDefault(); this.classList.remove('over'); });
+});
+$('drop').addEventListener('drop',function(e){ if(e.dataTransfer&&e.dataTransfer.files) addFiles(e.dataTransfer.files); });
+
+function addFiles(files){
+  Array.prototype.forEach.call(files, function(f){
+    if(!/^image\//.test(f.type)) return;
+    if(state.photos.length>=MAX_PHOTOS){ toast('写真は最大'+MAX_PHOTOS+'枚までです'); return; }
+    shrink(f).then(function(p){ state.photos.push(p); renderThumbs(); updateStatus(); })
+      .catch(function(e){ toast('画像の読み込みに失敗: '+e); });
+  });
+}
+
+function shrink(file){
+  return new Promise(function(resolve,reject){
+    var reader=new FileReader();
+    reader.onerror=function(){ reject('read error'); };
+    reader.onload=function(){
+      var img=new Image();
+      img.onerror=function(){ reject('decode error'); };
+      img.onload=function(){
+        var w=img.width,h=img.height, scale=Math.min(1, MAX_EDGE/Math.max(w,h));
+        var cw=Math.round(w*scale), ch=Math.round(h*scale);
+        var cv=document.createElement('canvas'); cv.width=cw; cv.height=ch;
+        cv.getContext('2d').drawImage(img,0,0,cw,ch);
+        var dataUrl=cv.toDataURL('image/jpeg',JPEG_Q);
+        resolve({
+          name:file.name||'whiteboard.jpg', mimeType:'image/jpeg',
+          data:dataUrl.split('base64,')[1], preview:dataUrl,
+          kb: Math.round(dataUrl.length*0.75/1024)
+        });
+      };
+      img.src=reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderThumbs(){
+  var box=$('thumbs'); box.innerHTML='';
+  state.photos.forEach(function(p,i){
+    var d=el('div','thumb');
+    d.innerHTML='<img src="'+p.preview+'" alt=""><div class="sz">'+p.kb+'KB</div>';
+    var b=el('button','','×');
+    b.onclick=function(){ state.photos.splice(i,1); renderThumbs(); updateStatus(); };
+    d.appendChild(b);
+    box.appendChild(d);
+  });
+}
+
+/*--------------------------------------------------
+ * 送信
+ *------------------------------------------------*/
+function updateStatus(){
+  var parts=[];
+  parts.push(state.incidentId ? '事案 '+state.incidentId : '事案 未選択');
+  parts.push(state.org ? state.org+'／'+(state.role||'役割未選択') : '所属 未選択');
+  if(state.tasks.length) parts.push('タスク'+state.tasks.length);
+  if(state.photos.length) parts.push('写真'+state.photos.length+'枚');
+  $('status').textContent=parts.join('　');
+  $('btnSubmit').disabled = !(state.incidentId && state.org);
+}
+
+function collect(){
+  return {
+    incidentId: state.incidentId,
+    org: state.org,
+    role: state.role || $('role').value,
+    name: $('name').value,
+    tasks: collectTasks(),
+    keep: $('keep').value,
+    problem: $('problem').value,
+    tryNext: $('tryNext').value,
+    photos: state.photos.map(function(p){ return {name:p.name, mimeType:p.mimeType, data:p.data}; })
+  };
+}
+
+function post(payload){
+  if(!API_URL) return Promise.reject('API_URL 未設定');
+  return fetch(API_URL, {method:'POST', body:JSON.stringify(payload)}).then(function(r){ return r.json(); });
+}
+
+$('btnSubmit').onclick=function(){
+  showErr('');
+  if(!state.incidentId){ showErr('事案を選択してください。'); return; }
+  if(!state.org){ showErr('所属区分を選択してください。'); return; }
+  if(state.tasks.indexOf(OTHER_LABEL)>=0 && !$('taskOther').value.trim()){
+    showErr('担当タスクで「その他」を選んだときは、内容を記入してください。');
+    $('taskOther').focus();
+    return;
+  }
+  if(!$('keep').value && !$('problem').value && !$('tryNext').value && !state.photos.length){
+    if(!confirm('コメントも写真も入力されていません。このまま送信しますか？')) return;
+  }
+  var btn=this; btn.disabled=true; btn.textContent='送信中…';
+  $('status').textContent='送信中…（写真がある場合は少し時間がかかります）';
+  saveProfile();
+  var payload=collect();
+
+  var ok=function(res){
+    btn.disabled=false; btn.textContent='送信する';
+    if(res && res.status==='success'){ showDone(res); }
+    else { showErr('送信に失敗しました: '+(res&&res.message||'不明なエラー')); updateStatus(); }
+  };
+  var ng=function(e){
+    btn.disabled=false; btn.textContent='送信する';
+    showErr('送信に失敗しました: '+(e&&e.message||e)); updateStatus();
+  };
+
+  if(inGas()) google.script.run.withSuccessHandler(ok).withFailureHandler(ng).apiSubmit(payload);
+  else post(payload).then(ok).catch(ng);
+};
+
+function showDone(res){
+  $('formArea').style.display='none';
+  $('bar').style.display='none';
+  $('doneArea').style.display='block';
+  $('doneMsg').textContent='事案 '+res.incidentId+' に登録しました'+
+    (res.photoCount?'（写真 '+res.photoCount+' 枚）':'')+'。この事案専用のシートに反映されています。';
+  if(res.sheetUrl){ $('doneLink').href=res.sheetUrl; } else { $('doneLink').style.display='none'; }
+  window.scrollTo({top:0});
+}
+
+$('btnAgainSame').onclick=function(){ resetComment(); showForm(); };
+function showForm(){
+  $('doneArea').style.display='none';
+  $('formArea').style.display='block';
+  $('bar').style.display='flex';
+  updateStatus();
+}
+$('btnAgainNew').onclick=function(){ resetComment(); state.incidentId=''; selectIncident(''); showForm(); };
+$('btnClear').onclick=function(){ if(confirm('入力内容をクリアしますか？')) resetComment(); };
+
+function resetComment(){
+  ['keep','problem','tryNext'].forEach(function(id){ $(id).value=''; });
+  state.tasks=[]; state.photos=[];
+  Array.prototype.forEach.call(document.querySelectorAll('#tasks .chip'), function(n){ n.dataset.sel=''; });
+  toggleTaskOther(false);
+  renderThumbs(); showErr(''); updateStatus();
+}
+
+/*--------------------------------------------------
+ * 氏名・所属の記憶（端末ローカル）
+ *------------------------------------------------*/
+function saveProfile(){
+  try{
+    localStorage.setItem('debrief_profile', JSON.stringify({name:$('name').value, org:state.org, role:state.role}));
+  }catch(e){}
+}
+function restoreProfile(){
+  try{
+    var p=JSON.parse(localStorage.getItem('debrief_profile')||'{}');
+    if(p.name) $('name').value=p.name;
+    if(p.org){ selectOrg(p.org); if(p.role){ $('role').value=p.role; state.role=p.role; } }
+  }catch(e){}
+}
+
+boot();
+</script>
+</body>
+</html>
